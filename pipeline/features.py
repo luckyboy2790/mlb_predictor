@@ -45,10 +45,28 @@ def compute_head_to_head_stats(year: int, team_abbr: str, opponent_abbr: str) ->
     }
 
 def get_recent_win_pct(df: pd.DataFrame, team: str, last_n: int = 5) -> float:
-    team_games = df[df['Team'] == team].sort_values('Date', ascending=False)
-    recent = team_games.head(last_n)
-    wins = recent['W/L'].str.startswith('W').sum()
-    return round(wins / len(recent), 3) if len(recent) > 0 else 0.5
+    df = df[df['Tm'] == team]
+    
+    date_format = "%A, %b %d"
+    
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce', format=date_format)
+    
+    df = df.sort_values('Date', ascending=False)
+    
+    recent_games = df.head(last_n)
+
+    if 'W/L' not in recent_games.columns:
+        print(f"⚠️ Missing W/L column for {team}")
+        return 0.5
+    
+    wins = recent_games['W/L'].str.startswith('W').sum()
+    
+    if len(recent_games) > 0:
+        win_pct = round(wins / len(recent_games), 3)
+    else:
+        win_pct = 0.5
+
+    return win_pct
 
 def extract_pitcher_stats(pitcher_df: pd.DataFrame, name: str) -> dict:
     try:
@@ -66,16 +84,16 @@ def extract_pitcher_stats(pitcher_df: pd.DataFrame, name: str) -> dict:
         }
 
 def build_feature_vector(df, team_schedules, home_team, away_team, year=2025):
-    home_row = df[df['team'] == home_team]
-    away_row = df[df['team'] == away_team]
+    home_row = df[df['home_team'] == home_team]
+    away_row = df[df['away_team'] == away_team]
 
     if home_row.empty or away_row.empty:
         raise ValueError("Missing team data for input prediction")
 
-    home_ops = home_row['ops'].values[0]
-    away_ops = away_row['ops'].values[0]
-    home_era = home_row['era'].values[0]
-    away_era = away_row['era'].values[0]
+    home_ops = home_row['home_ops'].values[0]
+    away_ops = away_row['away_ops'].values[0]
+    home_era = home_row['home_pitcher_era'].values[0]
+    away_era = away_row['away_pitcher_era'].values[0]
 
     h2h = compute_head_to_head_stats(year, home_team, away_team)
 

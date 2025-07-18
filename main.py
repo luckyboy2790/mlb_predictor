@@ -48,28 +48,47 @@ def main():
         df.columns = ['team', 'game_num', 'ops', 'era']
 
         teams = df['team'].unique()
-        
+
         print("Teams:", len(teams))
-        
+
         print("📥 Caching schedules for all teams...")
         team_schedules = {}
-
+        
         number = 0
+
+        # Fetch and combine schedules from 2020 to 2025 into one CSV per team
         for team in teams:
             number += 1
             print(number)
-            try:
-                team_schedules[team] = schedule_and_record(2025, team)
-            except Exception as e:
-                print(f"⚠️ Could not fetch schedule for {team}: {e}")
-                team_schedules[team] = pd.DataFrame()
-        
+            
+            full_schedule = pd.DataFrame()
+
+            for year in range(2020, 2026):  # Loop from 2020 to 2025
+                try:
+                    # Fetch schedule for the given year
+                    team_schedule = schedule_and_record(year, team)
+
+                    # Concatenate schedules for each year
+                    full_schedule = pd.concat([full_schedule, team_schedule])
+
+                    # Save the combined schedule for all years (2020-2025) into a single CSV file
+                    sched_path = f"data/schedules/{team}_2020_2025.csv"
+                    os.makedirs("data/schedules", exist_ok=True)
+                    full_schedule.to_csv(sched_path, index=False)
+
+                    team_schedules[team] = full_schedule  # Store the combined schedule for the team
+                except Exception as e:
+                    print(f"⚠️ Failed to fetch schedule for {team} in {year}: {e}")
+                    team_schedules[team] = pd.DataFrame()
+
         matchups = [(home, away) for home in teams for away in teams if home != away]
 
         print("Number of matchups:", len(matchups))
 
         data = []
         print("Generating enriched matchups...")
+
+        # Generate enriched matchups
         for home, away in matchups:
             number += 1
             print(number)
@@ -96,10 +115,6 @@ def main():
                 home_win_pct = 0.5
                 away_win_pct = 0.5
 
-            # Pitcher stats
-            # home_pitcher_stats = extract_pitcher_stats(pitching, home)
-            # away_pitcher_stats = extract_pitcher_stats(pitching, away)
-
             data.append({
                 'home_team': home,
                 'away_team': away,
@@ -111,38 +126,31 @@ def main():
                 'head_to_head_games': h2h_stats['head_to_head_games'],
                 'home_win_pct_last5': home_win_pct,
                 'away_win_pct_last5': away_win_pct,
-                # 'home_pitcher_whip': home_pitcher_stats['pitcher_whip'],
-                # 'away_pitcher_whip': away_pitcher_stats['pitcher_whip'],
-                # 'home_pitcher_k9': home_pitcher_stats['pitcher_k9'],
-                # 'away_pitcher_k9': away_pitcher_stats['pitcher_k9'],
                 'result': int(home_ops > away_ops)
             })
 
+        # Save the processed dataset
         pd.DataFrame(data).to_csv(processed_path, index=False)
+        
+        df = pd.read_csv(processed_path)
+        
         print("✅ Processed dataset saved.")
     else: 
         print("✅ Processed dataset already exists. Skipping fetch/generate.")
-        df = pd.DataFrame()  # placeholder
-        try:
-            df = pd.read_csv(processed_path)
-            df = df.rename(columns={
-                'home_team': 'team',
-                'home_ops': 'ops',
-                'home_pitcher_era': 'era'
-            })[['team', 'ops', 'era']]
-        except Exception as e:
-            print("⚠️ Failed to load df from processed CSV:", e)
+        df = pd.read_csv(processed_path)
 
         team_schedules = {}
         schedule_dir = "data/schedules"
-        teams = df['team'].unique() if not df.empty else []
+        teams = df['home_team'].unique() if not df.empty else []
+        print("teams", teams)
         for team in teams:
-            sched_path = f"{schedule_dir}/{team}.csv"
+            sched_path = f"{schedule_dir}/{team}_2020_2025.csv"
             if os.path.exists(sched_path):
                 team_schedules[team] = pd.read_csv(sched_path)
             else:
                 team_schedules[team] = pd.DataFrame()
 
+    # Preprocessing and model training
     print("⚙️ Preprocessing data...")
     preprocess_data(processed_path, 'model/')
 
@@ -151,15 +159,18 @@ def main():
 
     print("✅ Retraining complete.")
 
+    # Test prediction
     print("🔮 Running test prediction...")
-    home_team = "HOU"
-    away_team = "TEX"
+    home_team = "DET"
+    away_team = "BAL"
 
     try:
         input_game = build_feature_vector(df, team_schedules, home_team, away_team)
-        print(input_game)
+        
+        print("input_game", input_game)
+        
         result = predict_new_game(input_game)
-        print(result)
+        print("result", result)
     except Exception as e:
         print(f"❌ Could not predict game: {e}")
 
